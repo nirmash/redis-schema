@@ -1,0 +1,9 @@
+{   
+    "fields" : [
+        {"str1": {"type" : "string", "length": 10}},
+        {"reg1": {"type" : "regex", "regex": "[:word]"}},
+        {"num1": {"type" : "number", "min": 0, "max": 100}},
+        {"enum1": {"type" : "enum", "values": ["val1","val2"]}},
+        {"picklist1": {"type" : "picklist", "list": "lst1"}}
+    ]
+}
