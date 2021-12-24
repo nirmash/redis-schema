@@ -34,8 +34,12 @@
 
 int is_number(char const* arg)
 {
-   int n;
-   return (sscanf(arg, "%d", &n) == 1);
+   int n = strlen(arg);
+   for(int ii=0;ii<n;ii++){
+     if(!isdigit(arg[ii]))
+      return 0;
+   }
+   return 1;
 }
 
 int starts_with(const char * key_name, const char * rule_name)
@@ -158,6 +162,28 @@ RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *
       }
     }
   }
+  rule_type_name = RedisModule_CreateStringPrintf(ctx,"%s",FIELD_TYPE_NUMBER);
+  //execute number rule for key or list set command
+  if(RedisModule_StringCompare(rule_type,rule_type_name) == 0){
+    iHashReply = RedisModule_Call(ctx,"hget","sc",hSetName,"min");
+    int i_min = atoi(RedisModule_StringPtrLen(RedisModule_CreateStringFromCallReply(iHashReply),NULL));
+    iHashReply = RedisModule_Call(ctx,"hget","sc",hSetName,"max");
+    int i_max = atoi(RedisModule_StringPtrLen(RedisModule_CreateStringFromCallReply(iHashReply),NULL));
+    for(int ii=3;ii<argc;ii++){
+      RedisModuleString* num_reply = NULL;
+      char num_str[20];
+      strcpy(num_str,RedisModule_StringPtrLen(argv[ii],NULL));
+      if(!is_number(num_str)){
+        num_reply = RedisModule_CreateStringPrintf(ctx,"%s is not a number",RedisModule_StringPtrLen(argv[ii],NULL));
+        return num_reply;
+      }
+      int i_number = atoi(num_str);
+      if((i_number < i_min) || (i_number > i_max)){
+        num_reply = RedisModule_CreateStringPrintf(ctx,"%d is out is out of range (min: %d max: %d)",i_number,i_min,i_max);
+        return num_reply;
+      }
+    }
+  }
   return NULL;
 }
 
@@ -182,7 +208,7 @@ int LoadStringRule(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
   delete_rule(ctx, argv[1]);
 
-  char num_str[10];
+  char num_str[20];
 
   strcpy(num_str,RedisModule_StringPtrLen(argv[2],NULL));
   if(!is_number(num_str))
@@ -266,7 +292,7 @@ int LoadNumberRule(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     return RedisModule_ReplyWithSimpleString(ctx,"Expecting key name pattern and min and max value");
   }
   
-  char num_str[10];
+  char num_str[20];
   int min, max;
   
   strcpy(num_str,RedisModule_StringPtrLen(argv[2],NULL));
