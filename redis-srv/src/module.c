@@ -11,7 +11,8 @@
 #include <limits.h>
 #include <math.h>
 #include <unistd.h> 
-#include <pthread.h> 
+#include <pthread.h>
+#include <regex.h>
 
 #include "../redismodule.h"
 #include "../rmutil/ccronexpr.h"
@@ -72,16 +73,6 @@ int string_left (const char* source, char* destination, int len){
   return strlen(destination);
 }
 
-void copy_redis_string_array(RedisModuleCtx *ctx, RedisModuleString ** src, RedisModuleString ** dst, int argc){
-  printf("line 76 \n");
-  for(int ii=0;ii<argc;ii++){
-    printf("line 78 - ii[%d] is: %s\n",ii,RedisModule_StringPtrLen(src[ii],NULL));
-    RedisModuleString* cpy = RedisModule_CreateStringPrintf("%s",RedisModule_StringPtrLen(src[ii],NULL));
-    printf("line 80 - ii[%d] is: cpy: %s\n",ii,RedisModule_StringPtrLen(cpy,NULL));
-    dst[ii] = cpy;
-  }
-}
-
 RedisModuleString* get_redis_array_element_value(RedisModuleCtx *ctx, RedisModuleCallReply *reply, size_t idx){
     RedisModuleCallReply *ele = RedisModule_CallReplyArrayElement(reply,idx);
     return RedisModule_CreateStringFromCallReply(ele);
@@ -108,7 +99,7 @@ RedisModuleString* get_key_rule(RedisModuleCtx *ctx, RedisModuleString *key_name
   return NULL;
 }
 
-RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *rule_name, RedisModuleString *command, RedisModuleString **argv,  RedisModuleString **dst,int argc){
+RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *rule_name, RedisModuleString *command, RedisModuleString **argv, int argc){
   RedisModule_AutoMemory(ctx);
 
   RedisModuleString* hSetName = RedisModule_CreateStringPrintf(ctx,"%s%s",FIELD_PREFIX,RedisModule_StringPtrLen(rule_name,NULL));
@@ -140,16 +131,34 @@ RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *
     for(int ii=3;ii<argc;ii++){
       str_len = strlen(RedisModule_StringPtrLen(argv[ii],NULL));
       if(str_len > str_len_limit){
-        char* new_str = (char*) malloc(str_len_limit+1);
-        string_left(RedisModule_StringPtrLen(argv[ii],NULL),new_str,str_len_limit);
-        RedisModuleString* new_redis_string = RedisModule_CreateStringPrintf(ctx,"%s",new_str);
-        printf("line 136 - ii is: %d and string is: %s\n",ii,new_str);
-        free(new_str);
-        dst[ii-3]= new_redis_string;
-        printf("line 139 - argv[%d] is: %s\n",ii,RedisModule_StringPtrLen(new_redis_string,NULL));
+        RedisModuleString* ret_val = RedisModule_CreateStringPrintf(ctx,"String %s length (%d) violates limit (%d)",RedisModule_StringPtrLen(argv[ii],NULL),str_len,str_len_limit);
+        return ret_val;
       }
     }
+    return NULL;
   } 
+  rule_type_name = RedisModule_CreateStringPrintf(ctx,"%s",FIELD_TYPE_REGEX);
+  //execute regex rule for key or list set command
+  if(RedisModule_StringCompare(rule_type,rule_type_name) == 0){
+    iHashReply = RedisModule_Call(ctx,"hget","sc",hSetName,"regex");
+    RedisModuleString* regex_exp = RedisModule_CreateStringFromCallReply(iHashReply);
+    regex_t regex;
+    RedisModuleString* regex_reply = NULL;
+    regcomp(&regex,RedisModule_StringPtrLen(regex_exp,NULL),0);   
+    for(int ii=3;ii<argc;ii++){
+      int regex_res = regexec(&regex,RedisModule_StringPtrLen(argv[ii],NULL),0,NULL,0);
+      if(regex_res == 0)
+        continue;
+      if (regex_res == REG_NOMATCH){
+        regex_reply = RedisModule_CreateStringPrintf(ctx, "No match for %s on %s expression",RedisModule_StringPtrLen(argv[ii],NULL),RedisModule_StringPtrLen(regex_exp,NULL));
+        return regex_reply;
+      }else{
+        regex_reply = RedisModule_CreateStringPrintf(ctx, "Error evaluating %s for %s expression",RedisModule_StringPtrLen(argv[ii],NULL),RedisModule_StringPtrLen(regex_exp,NULL));
+        return regex_reply;
+      }
+    }
+  }
+  return NULL;
 }
 
 int DeleteRule(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -308,10 +317,14 @@ int ExecuteOverride(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   else
     RedisModule_Log(ctx, "notice","Found the rule, it is: %s",RedisModule_StringPtrLen(rule_name,NULL));
 
-  RedisModuleString* dst[argc-2];
-  execute_schema_rule(ctx,rule_name,argv[1],argv,dst,argc);
-  RedisModuleCallReply* rep = RedisModule_Call(ctx, cmd, "v", dst, argc - 2);
-  
+  RedisModuleString* rule_eval = NULL;
+  rule_eval = execute_schema_rule(ctx,rule_name,argv[1],argv,argc);
+  if (rule_eval != NULL){
+      RedisModule_ReplyWithError(ctx, RedisModule_StringPtrLen(rule_eval,NULL));
+      return REDISMODULE_OK;
+  }
+
+  RedisModuleCallReply* rep = RedisModule_Call(ctx, cmd, "v", argv + 2, argc - 2);
   if(!rep){
       RedisModule_ReplyWithError(ctx, "NULL reply returned");
   }else{
