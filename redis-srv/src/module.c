@@ -69,14 +69,6 @@ int add_rule_2_index(RedisModuleCtx *ctx, RedisModuleString* rule_name){
   return len;
 }
 
-int string_left (const char* source, char* destination, int len){
-  for(int ii=0; ii<len;ii++){
-    destination[ii]= source[ii];
-  }
-  destination[len] = '\0';
-  return strlen(destination);
-}
-
 RedisModuleString* get_redis_array_element_value(RedisModuleCtx *ctx, RedisModuleCallReply *reply, size_t idx){
     RedisModuleCallReply *ele = RedisModule_CallReplyArrayElement(reply,idx);
     return RedisModule_CreateStringFromCallReply(ele);
@@ -448,4 +440,3 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
   
   return REDISMODULE_OK;
 }
-//gcc -o test_json -I. test_json.c ../rmutil/json.c -lm
