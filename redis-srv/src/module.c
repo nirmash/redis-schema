@@ -121,8 +121,8 @@ RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *
   RedisModuleString* rule_type = NULL; 
   iHashReply = RedisModule_Call(ctx,"hget","sc",hSetName,"type");
   rule_type = RedisModule_CreateStringFromCallReply(iHashReply);
-  rule_type_name = RedisModule_CreateStringPrintf(ctx,"%s",FIELD_TYPE_STR);
   //execute string rule for key or list set command
+  rule_type_name = RedisModule_CreateStringPrintf(ctx,"%s",FIELD_TYPE_STR);
   if(RedisModule_StringCompare(rule_type,rule_type_name) == 0){
     //get the length 
     iHashReply = RedisModule_Call(ctx,"hget","sc",hSetName,"len");
@@ -141,8 +141,8 @@ RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *
     }
     return NULL;
   } 
-  rule_type_name = RedisModule_CreateStringPrintf(ctx,"%s",FIELD_TYPE_REGEX);
   //execute regex rule for key or list set command
+  rule_type_name = RedisModule_CreateStringPrintf(ctx,"%s",FIELD_TYPE_REGEX);
   if(RedisModule_StringCompare(rule_type,rule_type_name) == 0){
     iHashReply = RedisModule_Call(ctx,"hget","sc",hSetName,"regex");
     RedisModuleString* regex_exp = RedisModule_CreateStringFromCallReply(iHashReply);
@@ -162,8 +162,8 @@ RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *
       }
     }
   }
-  rule_type_name = RedisModule_CreateStringPrintf(ctx,"%s",FIELD_TYPE_NUMBER);
   //execute number rule for key or list set command
+  rule_type_name = RedisModule_CreateStringPrintf(ctx,"%s",FIELD_TYPE_NUMBER);
   if(RedisModule_StringCompare(rule_type,rule_type_name) == 0){
     iHashReply = RedisModule_Call(ctx,"hget","sc",hSetName,"min");
     int i_min = atoi(RedisModule_StringPtrLen(RedisModule_CreateStringFromCallReply(iHashReply),NULL));
@@ -181,6 +181,32 @@ RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *
       if((i_number < i_min) || (i_number > i_max)){
         num_reply = RedisModule_CreateStringPrintf(ctx,"%d is out is out of range (min: %d max: %d)",i_number,i_min,i_max);
         return num_reply;
+      }
+    }
+  }
+  //execute enum rule for key or list set command
+  rule_type_name = RedisModule_CreateStringPrintf(ctx,"%s",FIELD_TYPE_ENUM);
+  if(RedisModule_StringCompare(rule_type,rule_type_name) == 0){
+    iHashReply = RedisModule_Call(ctx,"hget","sc",hSetName,"enum_name");
+    RedisModuleString* enum_name = RedisModule_CreateStringFromCallReply(iHashReply);
+    for(int ii=3;ii<argc;ii++){
+      RedisModuleCallReply* in_list = RedisModule_Call(ctx,"SISMEMBER","ss",enum_name,argv[ii]);
+      if(RedisModule_CallReplyInteger(in_list) == 0){
+        RedisModuleString* enum_reply = RedisModule_CreateStringPrintf(ctx,"%s is not found in the enum",RedisModule_StringPtrLen(argv[ii],NULL));
+        return enum_reply;
+      }
+    }
+  }
+    //execute picklist rule for key or list set command
+  rule_type_name = RedisModule_CreateStringPrintf(ctx,"%s",FIELD_TYPE_PICKLIST);
+  if(RedisModule_StringCompare(rule_type,rule_type_name) == 0){
+    iHashReply = RedisModule_Call(ctx,"hget","sc",hSetName,"picklist");
+    RedisModuleString* picklist_name = RedisModule_CreateStringFromCallReply(iHashReply);
+    for(int ii=3;ii<argc;ii++){
+      RedisModuleCallReply* in_list = RedisModule_Call(ctx,"SISMEMBER","ss",picklist_name,argv[ii]);
+      if(RedisModule_CallReplyInteger(in_list) == 0){
+        RedisModuleString* picklist_reply = RedisModule_CreateStringPrintf(ctx,"%s is not found in the %s picklist",RedisModule_StringPtrLen(argv[ii],NULL),RedisModule_StringPtrLen(picklist_name,NULL));
+        return picklist_reply;
       }
     }
   }
