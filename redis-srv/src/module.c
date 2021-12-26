@@ -25,6 +25,8 @@
 
 #define FIELD_PREFIX "__*_schema_field_"
 #define FIELD_LISTS "__*_schema_field_sorted_set_*__"
+#define TABLE_PREFIX "__*_schema_table_"
+#define TABLES_LIST "__*_schema_table_list_*__"
 
 #define FIELD_TYPE_STR    "string"
 #define FIELD_TYPE_REGEX  "regex"
@@ -65,7 +67,6 @@ int add_rule_2_index(RedisModuleCtx *ctx, RedisModuleString* rule_name){
     return RedisModule_ReplyWithSimpleString(ctx,"Negative rule name length");    
   
   RedisModule_Call(ctx,"ZADD","cls",FIELD_LISTS,(long long) len,rule_name);
-  RedisModule_Log(ctx,"notice","line 66");
   return len;
 }
 
@@ -339,9 +340,35 @@ int LoadNumberRule(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   return RedisModule_ReplyWithSimpleString(ctx,"OK");
 }
 
+int LoadTableRule(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+  RedisModule_AutoMemory(ctx);
+
+  if (argc < 2) {
+    return RedisModule_ReplyWithSimpleString(ctx,"Expecting table name and a list of fields");
+  }
+
+  RedisModuleString *tableName = RedisModule_CreateStringPrintf(ctx,"%s%s",TABLE_PREFIX, RedisModule_StringPtrLen(argv[1],NULL));
+  //make sure all the fields are valid
+  for(int ii=2; ii < argc; ii++){
+      RedisModuleCallReply* in_list = RedisModule_Call(ctx,"ZSCAN","clcs",FIELD_LISTS,0,"match",argv[ii]);
+      RedisModuleCallReply* results_list = RedisModule_CallReplyArrayElement(in_list,1);
+      size_t arr_len = RedisModule_CallReplyLength(results_list);
+      if(arr_len == 0){
+        RedisModuleString* field_eval = RedisModule_CreateStringPrintf(ctx,"Table field %s doesn't exist",RedisModule_StringPtrLen(argv[ii], NULL));
+        return RedisModule_ReplyWithError(ctx,RedisModule_StringPtrLen(field_eval,NULL));
+      }
+  }
+  //clean up table definition if exists
+  RedisModule_Call(ctx,"DEL","s",tableName);
+  for(int ii=2; ii < argc; ii++){
+    RedisModule_Call(ctx,"SADD","ss",tableName,argv[ii]);
+  }
+  return RedisModule_ReplyWithSimpleString(ctx,"OK");
+}
+
 int Help(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   RedisModule_AutoMemory(ctx); 
-  return RedisModule_ReplyWithSimpleString(ctx,"Module to add validation rules to Redis data\nAll commands expect a unique beginning of the key name to be evaluated (it will be matched from left on when validating)\nCommands available:\n1. schema.string_rule - enforces a string length\n2. schema.regex_rule - enforces a RegEx\n3. schema.number_rule - checks for min max in a number value\n4. schema.enum_rule - takes a list of values for an enum type validation\n5. schema.list_rule - takes a name of a Redis list with values\n6. schema.del_rule - deletes a rule, also used internally when a rule is updated\n7. schema.upsert - call a command so data can be validated");
+  return RedisModule_ReplyWithSimpleString(ctx,"Module to add validation rules to Redis data\nAll commands expect a unique beginning of the key name to be evaluated (it will be matched from left on when validating)\nCommands available:\n1. schema.string_rule - enforces a string length\n2. schema.regex_rule - enforces a RegEx\n3. schema.number_rule - checks for min max in a number value\n4. schema.enum_rule - takes a list of values for an enum type validation\n5. schema.list_rule - takes a name of a Redis list with values\n6. schema.del_rule - deletes a rule, also used internally when a rule is updated\n7. schema.upsert - call a command so data can be validated\n8. schema.table_rule - add a list of field to create a row definition");
 }
 
 int ExecuteOverride(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -373,7 +400,6 @@ int ExecuteOverride(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
       RedisModule_ReplyWithError(ctx, "NULL reply returned");
   }else{
       RedisModule_ReplyWithCallReply(ctx, rep);
-      RedisModule_FreeCallReply(rep);
   }
 
   return REDISMODULE_OK;
@@ -434,6 +460,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
   RMUtil_RegisterWriteCmd(ctx, "schema.number_rule", LoadNumberRule);
   RMUtil_RegisterWriteCmd(ctx, "schema.enum_rule", LoadEnumRule);
   RMUtil_RegisterWriteCmd(ctx, "schema.list_rule", LoadListRule);
+  RMUtil_RegisterWriteCmd(ctx, "schema.table_rule", LoadTableRule);
   RMUtil_RegisterWriteCmd(ctx, "schema.del_rule", DeleteRule);
   RMUtil_RegisterWriteCmd(ctx, "schema.upsert", ExecuteOverride);
   RMUtil_RegisterWriteCmd(ctx, "schema.help", Help);
