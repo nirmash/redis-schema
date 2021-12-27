@@ -25,6 +25,7 @@
 
 #define FIELD_PREFIX "__*_schema_field_"
 #define FIELD_LISTS "__*_schema_field_sorted_set_*__"
+#define TABLE_KEY_PREFIX "__*_schema_table_pk_"
 #define TABLE_PREFIX "__*_schema_table_"
 #define TABLES_LIST "__*_schema_table_list_*__"
 
@@ -96,7 +97,7 @@ RedisModuleString* get_key_rule(RedisModuleCtx *ctx, RedisModuleString *key_name
   return NULL;
 }
 
-RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *rule_name, RedisModuleString *command, RedisModuleString **argv, int argc){
+RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *rule_name, RedisModuleString **argv, int argc){
   RedisModule_AutoMemory(ctx);
 
   RedisModuleString* hSetName = RedisModule_CreateStringPrintf(ctx,"%s%s",FIELD_PREFIX,RedisModule_StringPtrLen(rule_name,NULL));
@@ -368,10 +369,55 @@ int LoadTableRule(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 
 int Help(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   RedisModule_AutoMemory(ctx); 
-  return RedisModule_ReplyWithSimpleString(ctx,"Module to add validation rules to Redis data\nAll commands expect a unique beginning of the key name to be evaluated (it will be matched from left on when validating)\nCommands available:\n1. schema.string_rule - enforces a string length\n2. schema.regex_rule - enforces a RegEx\n3. schema.number_rule - checks for min max in a number value\n4. schema.enum_rule - takes a list of values for an enum type validation\n5. schema.list_rule - takes a name of a Redis list with values\n6. schema.del_rule - deletes a rule, also used internally when a rule is updated\n7. schema.upsert - call a command so data can be validated\n8. schema.table_rule - add a list of field to create a row definition");
+  return RedisModule_ReplyWithSimpleString(ctx,"Module to add validation rules to Redis data\nAll commands expect a unique beginning of the key name to be evaluated (it will be matched from left on when validating)\nCommands available:\n1. schema.string_rule - enforces a string length\n2. schema.regex_rule - enforces a RegEx\n3. schema.number_rule - checks for min max in a number value\n4. schema.enum_rule - takes a list of values for an enum type validation\n5. schema.list_rule - takes a name of a Redis list with values\n6. schema.del_rule - deletes a rule, also used internally when a rule is updated\n7. schema.upsert - call a command so data can be validated\n8. schema.table_rule - add a list of field to create a row definition\n9. schema.insert_row - creates a new row in a table");
 }
 
-int ExecuteOverride(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+int UpsertRow(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+  RedisModule_AutoMemory(ctx);
+  if (argc < 3) {
+    return RedisModule_ReplyWithSimpleString(ctx,"Expecting table (hash) name, row id (-1 for new) and arguments");
+  }
+  //check that the table exits
+  RedisModuleString *tblName = RedisModule_CreateStringPrintf(ctx,"%s%s",TABLE_PREFIX, RedisModule_StringPtrLen(argv[2],NULL));
+  RedisModuleCallReply* reply = RedisModule_Call(ctx,"KEYS","s",tblName);
+
+  if(RedisModule_CallReplyLength(reply)<=0){
+    return RedisModule_ReplyWithSimpleString(ctx,"Table name supplied doesn't exist, use schema.table_rule to create");
+  }
+  
+  for(int ii=3; ii<argc; ii=ii+2){
+    //check that all the fields are valid
+    RedisModuleString* rule_name = get_key_rule(ctx,argv[ii]);
+    if(rule_name == NULL){
+      RedisModule_ReplyWithError(ctx,"Key name invalid");
+      return REDISMODULE_OK;
+    }      
+    RedisModuleString* rule_eval = NULL;
+    RedisModuleString* vArr[1];
+    vArr[0] = RedisModule_CreateStringPrintf(ctx,"%s",RedisModule_StringPtrLen(argv[ii+1],NULL));
+    rule_eval = execute_schema_rule(ctx,rule_name,vArr,1);
+    if (rule_eval != NULL){
+        RedisModule_ReplyWithError(ctx, RedisModule_StringPtrLen(rule_eval,NULL));
+        return REDISMODULE_OK;
+    }    
+  }
+  //create the primary key for the row
+  int row_key = atoi(RedisModule_StringPtrLen(argv[1],NULL));
+  RedisModuleString* set_name = NULL;
+  RedisModuleString* row_key_name = NULL;
+  row_key_name = RedisModule_CreateStringPrintf(ctx,"%s%s",TABLE_KEY_PREFIX,RedisModule_StringPtrLen(argv[2],NULL));
+  if(row_key == -1){
+    RedisModuleCallReply* key_rep = RedisModule_Call(ctx, "INCR","s",row_key_name);
+    row_key = (int) RedisModule_CallReplyInteger(key_rep);
+  }
+  //do the hset
+  set_name = RedisModule_CreateStringPrintf(ctx,"%s_%d",RedisModule_StringPtrLen(argv[2],NULL),row_key);
+  RedisModuleCallReply* rep = RedisModule_Call(ctx, "HSET", "sv", set_name,argv + 3, argc - 3); 
+  RedisModule_ReplyWithCallReply(ctx,rep);
+  return REDISMODULE_OK;
+}
+
+int UpsertKey(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
   //commands are set, lpush, hset, sadd
   RedisModule_AutoMemory(ctx);
@@ -389,7 +435,7 @@ int ExecuteOverride(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_Log(ctx, "notice","Found the rule, it is: %s",RedisModule_StringPtrLen(rule_name,NULL));
 
   RedisModuleString* rule_eval = NULL;
-  rule_eval = execute_schema_rule(ctx,rule_name,argv[1],argv,argc);
+  rule_eval = execute_schema_rule(ctx,rule_name,argv,argc);
   if (rule_eval != NULL){
       RedisModule_ReplyWithError(ctx, RedisModule_StringPtrLen(rule_eval,NULL));
       return REDISMODULE_OK;
@@ -462,7 +508,8 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
   RMUtil_RegisterWriteCmd(ctx, "schema.list_rule", LoadListRule);
   RMUtil_RegisterWriteCmd(ctx, "schema.table_rule", LoadTableRule);
   RMUtil_RegisterWriteCmd(ctx, "schema.del_rule", DeleteRule);
-  RMUtil_RegisterWriteCmd(ctx, "schema.upsert", ExecuteOverride);
+  RMUtil_RegisterWriteCmd(ctx, "schema.upsert_key", UpsertKey);
+  RMUtil_RegisterWriteCmd(ctx, "schema.upsert_row", UpsertRow);
   RMUtil_RegisterWriteCmd(ctx, "schema.help", Help);
   
   return REDISMODULE_OK;
