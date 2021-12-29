@@ -29,6 +29,11 @@
 #define TABLE_PREFIX "__*_schema_table_"
 #define TABLES_LIST "__*_schema_table_list_*__"
 
+#define SPROC_INDEX_LIST "__*_Sproc_List_*__"
+#define SPROC_NAME_PREFIX "__*_Sproc_Name_"
+#define SPROC_HASH_KEY_NAME "hash"
+#define SPROC_CODE_KEY_NAME "sproc_source"
+
 #define FIELD_TYPE_STR    "string"
 #define FIELD_TYPE_REGEX  "regex"
 #define FIELD_TYPE_NUMBER "number"
@@ -58,7 +63,7 @@ int starts_with(const char * key_name, const char * rule_name)
 int delete_rule (RedisModuleCtx *ctx, RedisModuleString* rule_name){
   RedisModuleString *keyName = RedisModule_CreateStringPrintf(ctx,"%s%s",FIELD_PREFIX, RedisModule_StringPtrLen(rule_name,NULL));
   RedisModule_Call(ctx,"DEL","s",keyName);
-  RedisModule_Call(ctx,"ZREM","cs",FIELD_LISTS,rule_name);
+  return (int) RedisModule_CallReplyInteger(RedisModule_Call(ctx,"ZREM","cs",FIELD_LISTS,rule_name));
 }
 
 int add_rule_2_index(RedisModuleCtx *ctx, RedisModuleString* rule_name){
@@ -101,7 +106,6 @@ RedisModuleString* execute_schema_rule (RedisModuleCtx *ctx, RedisModuleString *
   RedisModule_AutoMemory(ctx);
 
   RedisModuleString* hSetName = RedisModule_CreateStringPrintf(ctx,"%s%s",FIELD_PREFIX,RedisModule_StringPtrLen(rule_name,NULL));
-  RedisModuleString* rule_pattern_name = NULL;
   RedisModuleString* rule_type_name = NULL;  
 
   RedisModuleCallReply* iHashReply = RedisModule_Call(ctx,"hget","sc",hSetName,"key_pattern");
@@ -344,7 +348,7 @@ int LoadNumberRule(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 int LoadTableRule(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
   RedisModule_AutoMemory(ctx);
 
-  if (argc < 2) {
+  if (argc < 3) {
     return RedisModule_ReplyWithSimpleString(ctx,"Expecting table name and a list of fields");
   }
 
@@ -367,9 +371,56 @@ int LoadTableRule(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
   return RedisModule_ReplyWithSimpleString(ctx,"OK");
 }
 
+int ExecuteQueryLua(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+  RedisModule_AutoMemory(ctx); 
+
+  if (argc < 2) {
+    return RedisModule_ReplyWithSimpleString(ctx,"Expecting a script name and optional parameters");
+  }
+
+  RedisModuleString* sprocName = RedisModule_CreateStringPrintf(ctx,"%s%s",SPROC_NAME_PREFIX,RedisModule_StringPtrLen(argv[1],NULL));
+  printf("sproc name is: %s\n",RedisModule_StringPtrLen(sprocName,NULL));
+  RedisModuleString* sprocHash = RedisModule_CreateStringFromCallReply(RedisModule_Call(ctx,"HGET","sc",sprocName,SPROC_HASH_KEY_NAME));
+  printf("sproc hash is: %s\n",RedisModule_StringPtrLen(sprocHash,NULL));
+  RedisModuleCallReply* sprocRet = NULL;
+
+  if(argc > 2){
+    sprocRet = RedisModule_Call(ctx,"EVALSHA","slv",sprocHash,(long long)(argc-2),argv+2); 
+  }else{
+    sprocRet = RedisModule_Call(ctx,"EVALSHA","sl",sprocHash,(long long)0);
+  }
+  return RedisModule_ReplyWithCallReply(ctx,sprocRet);
+}
+
+int RegisterQueryLua(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
+
+  RedisModule_AutoMemory(ctx); 
+
+  if (argc < 3) {
+    return RedisModule_ReplyWithSimpleString(ctx,"Expecting query name and lua code");
+  }
+  
+  RedisModuleString *sprocName = NULL;
+  RedisModuleString *code = NULL;
+  RedisModuleCallReply *rep = NULL;
+
+  sprocName = argv[1];
+  code = argv[2];
+
+  RedisModuleString *hash = RedisModule_CreateStringPrintf(ctx,"0");
+  RedisModuleCallReply *reply = RedisModule_Call(ctx,"SCRIPT","cs","LOAD",code);
+  hash  = RedisModule_CreateStringFromCallReply(reply);
+  RedisModuleString *prprSprocName = RedisModule_CreateStringPrintf(ctx,"%s%s",SPROC_NAME_PREFIX,RedisModule_StringPtrLen(sprocName,NULL));
+  rep = RedisModule_Call(ctx,"SADD","cs",SPROC_INDEX_LIST,prprSprocName);
+  RedisModule_Call(ctx,"HSET","scs",prprSprocName,SPROC_CODE_KEY_NAME,code);
+  RedisModule_Call(ctx,"HSET","scs",prprSprocName,SPROC_HASH_KEY_NAME,hash);
+  
+  return RedisModule_ReplyWithSimpleString(ctx,"Script Loaded");
+}
+
 int Help(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   RedisModule_AutoMemory(ctx); 
-  return RedisModule_ReplyWithSimpleString(ctx,"Module to add validation rules to Redis data\nAll commands expect a unique beginning of the key name to be evaluated (it will be matched from left on when validating)\nCommands available:\n1. schema.string_rule - enforces a string length\n2. schema.regex_rule - enforces a RegEx\n3. schema.number_rule - checks for min max in a number value\n4. schema.enum_rule - takes a list of values for an enum type validation\n5. schema.list_rule - takes a name of a Redis list with values\n6. schema.del_rule - deletes a rule, also used internally when a rule is updated\n7. schema.upsert - call a command so data can be validated\n8. schema.table_rule - add a list of field to create a row definition\n9. schema.insert_row - creates a new row in a table");
+  return RedisModule_ReplyWithSimpleString(ctx,"Module to add validation rules to Redis data\nThere are two entities in this module:\n Fields that can be added with a validation rule.\n Tables that are implemented as a Redis Hashsets (a collection of fields) are created by calling schema.table_rule.\nData can be validated by calling upsert commands. To add or update data in an individual field use schema.upsert, this command evaluates field names from left to right and applies the value per the validation rule (command not applied if data is invalid). Rows can be added or updated by calling the upsert_row command which expects the row index (-1 for new) a table name and key value pairs. The field names are validated as an exact string compare and validated against the field data type rule.\nAll field commands expect a unique beginning of the key name to be evaluated (it will be matched from left on when validating)\nCommands available:\n1. schema.string_rule - enforces a string length\n2. schema.regex_rule - enforces a RegEx\n3. schema.number_rule - checks for min max in a number value\n4. schema.enum_rule - takes a list of values for an enum type validation\n5. schema.list_rule - takes a name of a Redis list with values\n6. schema.del_rule - deletes a rule, also used internally when a rule is updated\n7. schema.upsert - call a command so data can be validated\n8. schema.table_rule - add a list of field to create a row definition\n9. schema.upsert_row - creates or updates a row in a table, params are row index (-1 for new) table name and field name value pairs");
 }
 
 int UpsertRow(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -419,7 +470,6 @@ int UpsertRow(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
 int UpsertKey(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
-  //commands are set, lpush, hset, sadd
   RedisModule_AutoMemory(ctx);
 
   if (argc < 3) {
@@ -451,45 +501,6 @@ int UpsertKey(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   return REDISMODULE_OK;
 }
 
-int NotifyCallback(RedisModuleCtx *ctx, int type, const char *event, RedisModuleString *key) {
-  RedisModule_AutoMemory(ctx);
-  printf("Event fired, type is: %d event is: %s key is: %s\n",type, event, RedisModule_StringPtrLen(key,NULL));
-  RedisModule_Log(ctx, "notice","Event fired, type is: %d event is: %s key is: %s",type, event, RedisModule_StringPtrLen(key,NULL));
-
-  /*
-  if (IsSproceListLoaded(ctx)<1){
-    return RedisModule_ReplyWithSimpleString(ctx,"no scripts loaded");
-  }
-  //handle a key expiration event
-  if((type == 256) && (strcmp(event,"expired")==0)){
-    return OnKeyExpiryEvent(ctx, key);
-  }
-
-  char* strKeyName = (char*) RedisModule_StringPtrLen(key,NULL);
-  if(prefix(EXPIRE_KEY_PREFIX,strKeyName)==0){
-    return REDISMODULE_OK;
-  }
-  if(prefix(SPROC_INDEX_LIST,strKeyName)==0){
-    return REDISMODULE_OK;
-  } 
-  if(prefix(SPROC_NAME_PREFIX,strKeyName)==0){
-    return REDISMODULE_OK;
-  } 
-  //Get the data in the key that was changed  
-  RedisModuleString *sprocName = GetSprocNameFromKey(ctx,RedisModule_StringPtrLen(key,NULL),event);
-  if (sprocName == NULL)
-    return REDISMODULE_OK;
-  if(SprocExists(ctx,sprocName)<1)
-    return REDISMODULE_OK;
-
-  RedisModule_Log(ctx,"notice","Calling %s",RedisModule_StringPtrLen(sprocName,NULL));
-  RedisModuleString *keyVal = GetRedisKeyValue(ctx,key,event);
-  RedisModule_Log(ctx,"notice","Key: %s and Value: %s",RedisModule_StringPtrLen(key,NULL),RedisModule_StringPtrLen(keyVal,NULL));
-  return RedisModule_ReplyWithString(ctx,CallSproc(ctx,sprocName,key,keyVal,NULL));
-  */
-  return RedisModule_ReplyWithSimpleString(ctx,"OK"); 
-}
-
 int RedisModule_OnLoad(RedisModuleCtx *ctx) {
 
   // Register the module itself
@@ -498,9 +509,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
     return REDISMODULE_ERR;
   }
 
-  // register for event notifications
-  RedisModule_SubscribeToKeyspaceEvents(ctx,REDISMODULE_NOTIFY_ALL,NotifyCallback);
-  // register schema - using the shortened utility registration macro
+  // Register schema - using the shortened utility registration macro
   RMUtil_RegisterWriteCmd(ctx, "schema.string_rule", LoadStringRule);
   RMUtil_RegisterWriteCmd(ctx, "schema.regex_rule", LoadRegExRule);
   RMUtil_RegisterWriteCmd(ctx, "schema.number_rule", LoadNumberRule);
@@ -510,6 +519,8 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
   RMUtil_RegisterWriteCmd(ctx, "schema.del_rule", DeleteRule);
   RMUtil_RegisterWriteCmd(ctx, "schema.upsert_key", UpsertKey);
   RMUtil_RegisterWriteCmd(ctx, "schema.upsert_row", UpsertRow);
+  RMUtil_RegisterWriteCmd(ctx, "schema.register_query_lua", RegisterQueryLua);
+  RMUtil_RegisterWriteCmd(ctx, "schema.execute_query_lua", ExecuteQueryLua);
   RMUtil_RegisterWriteCmd(ctx, "schema.help", Help);
   
   return REDISMODULE_OK;
