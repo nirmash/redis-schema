@@ -385,7 +385,8 @@ int ExecuteQueryLua(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
   RedisModuleCallReply* sprocRet = NULL;
 
   if(argc > 2){
-    sprocRet = RedisModule_Call(ctx,"EVALSHA","slv",sprocHash,(long long)(argc-2),argv+2); 
+    printf("params for evalsha, num keys %d key value %s\n",argc-2,RedisModule_StringPtrLen(argv[2],NULL));
+    sprocRet = RedisModule_Call(ctx,"EVALSHA","slv",sprocHash,(long long)(argc-2),argv+2,argc-2); 
   }else{
     sprocRet = RedisModule_Call(ctx,"EVALSHA","sl",sprocHash,(long long)0);
   }
