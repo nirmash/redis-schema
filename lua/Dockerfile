@@ -37,4 +37,12 @@ RUN set -ex \
     && rm -rf /tmp/lua /tmp/luarocks.tar.gz \    
     && lua -v
 
+RUN apt-get update
+RUN apt-get install -y python3-pip
+RUN pip3 install -q redis
+
+WORKDIR /
+RUN mkdir src
+ADD src src
+
 CMD [ "lua" ]

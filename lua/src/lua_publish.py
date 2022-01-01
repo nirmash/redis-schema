@@ -14,7 +14,15 @@ def main():
   # Load lua code
     dir = os.getcwd()
     filename = sys.argv[3]
-    file = open(os.getcwd() + "\\" + filename, "r")
+    filePath = ""
+
+    if (os.name == "nt"):
+      filePath = os.getcwd() + "\\" + filename
+    else:
+      filePath = os.getcwd() + "/" + filename
+    
+    file = open(filePath,"r")
+
     all_of_it = file.read()
     file.close()
     r = get_redis_client()
