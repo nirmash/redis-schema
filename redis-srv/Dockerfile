@@ -51,8 +51,6 @@ ADD rmutil rmutil
 WORKDIR /
 
 COPY redismodule.h redismodule.h
-COPY preps.sh preps.sh
-RUN chmod u+x preps.sh
 RUN mkdir /shared_files 
 
 WORKDIR /src
