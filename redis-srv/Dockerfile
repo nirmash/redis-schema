@@ -50,8 +50,6 @@ ADD rmutil rmutil
 
 WORKDIR /
 
-RUN cp -R ../usr/include/python3.9/ rmutil/
-
 COPY redismodule.h redismodule.h
 COPY preps.sh preps.sh
 RUN chmod u+x preps.sh
@@ -64,4 +62,4 @@ EXPOSE 6379
 
 WORKDIR /
 
-ENTRYPOINT ["./bin/sh","preps.sh"]
+CMD ["redis-server","--protected-mode no","--logfile","/tmp/redis.txt","--loadmodule","/src/module.so"]

@@ -22,7 +22,17 @@ Using the samples requires the following.
 3. Install [Docker Compose](https://docs.docker.com/compose/install/)
 
 ## Getting the environment up and running
-
-
+We will start by cloning the git repo. In a terminal winodw, type:
+```
+$ git clone https://github.com/nirmash/redis-schema.git
+Cloning into 'redis-schema'...
+remote: Enumerating objects: 174, done.
+remote: Counting objects: 100% (174/174), done.
+remote: Compressing objects: 100% (138/138), done.
+remote: Total 174 (delta 36), reused 174 (delta 36), pack-reused 0
+Receiving objects: 100% (174/174), 267.90 KiB | 1.05 MiB/s, done.
+Resolving deltas: 100% (36/36), done.
+```
+Once done, the files will be under the `redis-schema` folder. 
 
 redis-cli -h 172.28.1.4 -p 6379 --ldb --eval select_all.lua contacts
