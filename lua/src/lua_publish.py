@@ -8,12 +8,12 @@ import sys
 # argv[3] = lua scripts absolute path
 
 def get_redis_client():
-    return redis.Redis(host=sys.argv[1], port=sys.argv[2], db=0, decode_responses=True)
+    return redis.Redis(host='172.28.1.4', port=6379, db=0, decode_responses=True)
 
 def main():
   # Load lua code
     dir = os.getcwd()
-    filename = sys.argv[3]
+    filename = sys.argv[1]
     filePath = ""
 
     if (os.name == "nt"):

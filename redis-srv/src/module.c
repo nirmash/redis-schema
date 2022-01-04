@@ -379,9 +379,15 @@ int ExecuteQueryLua(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
     return RedisModule_ReplyWithSimpleString(ctx,"Expecting a script name and optional parameters");
   }
 
-  RedisModuleString* sprocName = RedisModule_CreateStringPrintf(ctx,"%s%s",SPROC_NAME_PREFIX,RedisModule_StringPtrLen(argv[1],NULL));
+  RedisModuleString* sprocName = NULL;
+  RedisModuleString* sprocHash = NULL;
+
+  sprocName = RedisModule_CreateStringPrintf(ctx,"%s%s",SPROC_NAME_PREFIX,RedisModule_StringPtrLen(argv[1],NULL));
   printf("sproc name is: %s\n",RedisModule_StringPtrLen(sprocName,NULL));
-  RedisModuleString* sprocHash = RedisModule_CreateStringFromCallReply(RedisModule_Call(ctx,"HGET","sc",sprocName,SPROC_HASH_KEY_NAME));
+  sprocHash = RedisModule_CreateStringFromCallReply(RedisModule_Call(ctx,"HGET","sc",sprocName,SPROC_HASH_KEY_NAME));
+  if (sprocHash == NULL){
+    return RedisModule_ReplyWithSimpleString(ctx,"Lua script not loaded");    
+  }
   printf("sproc hash is: %s\n",RedisModule_StringPtrLen(sprocHash,NULL));
   RedisModuleCallReply* sprocRet = NULL;
 
@@ -425,7 +431,7 @@ int RegisterQueryLua(RedisModuleCtx *ctx, RedisModuleString **argv, int argc){
 
 int Help(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   RedisModule_AutoMemory(ctx); 
-  return RedisModule_ReplyWithSimpleString(ctx,"Module to add validation rules to Redis data\nThere are two entities in this module:\n Fields that can be added with a validation rule.\n Tables that are implemented as a Redis Hashsets (a collection of fields) are created by calling schema.table_rule.\nData can be validated by calling upsert commands. To add or update data in an individual field use schema.upsert, this command evaluates field names from left to right and applies the value per the validation rule (command not applied if data is invalid). Rows can be added or updated by calling the upsert_row command which expects the row index (-1 for new) a table name and key value pairs. The field names are validated as an exact string compare and validated against the field data type rule.\nAll field commands expect a unique beginning of the key name to be evaluated (it will be matched from left on when validating)\nCommands available:\n1. schema.string_rule - enforces a string length\n2. schema.regex_rule - enforces a RegEx\n3. schema.number_rule - checks for min max in a number value\n4. schema.enum_rule - takes a list of values for an enum type validation\n5. schema.list_rule - takes a name of a Redis list with values\n6. schema.del_rule - deletes a rule, also used internally when a rule is updated\n7. schema.upsert - call a command so data can be validated\n8. schema.table_rule - add a list of field to create a row definition\n9. schema.upsert_row - creates or updates a row in a table, params are row index (-1 for new) table name and field name value pairs\n10. schema.register_query_lua - allows users to build and execute lua scripts to query tables or implement APIs, takes a lua script name and lua code\n11. schema.execute_query_lua - takes the name and parameters for a lua script registered with schema.register_query_lua");
+  return RedisModule_ReplyWithSimpleString(ctx,"Module to add validation rules to Redis data\nThere are two entities in this module:\n Fields that can be added with a validation rule.\n Tables that are implemented as a Redis Hashsets (a collection of fields) are created by calling schema.table_rule.\nData can be validated by calling upsert commands. To add or update data in an individual field use schema.upsert_key, this command evaluates field names from left to right and applies the value per the validation rule (command not applied if data is invalid). Rows can be added or updated by calling the upsert_row command which expects the row index (-1 for new) a table name and key value pairs. The field names are validated as an exact string compare and validated against the field data type rule.\nAll field commands expect a unique beginning of the key name to be evaluated (it will be matched from left on when validating)\nCommands available:\n1. schema.string_rule - enforces a string length\n2. schema.regex_rule - enforces a RegEx\n3. schema.number_rule - checks for min max in a number value\n4. schema.enum_rule - takes a list of values for an enum type validation\n5. schema.list_rule - takes a name of a Redis list with values\n6. schema.del_rule - deletes a rule, also used internally when a rule is updated\n7. schema.upsert - call a command so data can be validated\n8. schema.table_rule - add a list of field to create a row definition\n9. schema.upsert_row - creates or updates a row in a table, params are row index (-1 for new) table name and field name value pairs\n10. schema.register_query_lua - allows users to build and execute lua scripts to query tables or implement APIs, takes a lua script name and lua code\n11. schema.execute_query_lua - takes the name and parameters for a lua script registered with schema.register_query_lua");
 }
 
 int UpsertRow(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {

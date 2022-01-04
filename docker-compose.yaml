@@ -19,13 +19,9 @@ services:
     networks:
       redis_schema_net:
         ipv4_address: 172.28.1.6
-    volumes:
-      - code:/wsl$$/docker-desktop-data/lua_code
 networks:
   redis_schema_net:
     ipam:
       driver: default
       config:
         - subnet: 172.28.0.0/16
-volumes:
-  code: 
