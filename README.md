@@ -202,6 +202,9 @@ To use the Lua script we need to use the `schema.execute_query_lua` command. To 
 
 Sometimes we need to be able to debug our Lua code inside Redis, fortunately, Redis has a [Lua debugger](https://redis.io/topics/ldb) built into it. We can start debugging our `select_all.lua` script by using the below command: 
 ```
+redis-cli -h 172.28.1.4 -p 6379 --ldb --eval select_all.lua contacts
+```
+```
 root@9272b3492e54:/src# redis-cli -h 172.28.1.4 -p 6379 --ldb --eval select_all.lua contacts
 Lua debugging session started, please use:
 quit    -- End the session.
