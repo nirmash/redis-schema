@@ -1,6 +1,6 @@
 
 # How to make Redis play nice with your data 
-I love using Redis in my projects, it is a super fast and scalable no-SQL data layer with a bunch of useful in-memory data structures. In some cases, however, it would be great to have somekind of schema support for the data in my Redis database. Imagine a case in which I have 2 different Microservices using the reading and writing customer profile data into Redis. It would save time and reduce my bug count if, for example, I don't have to check that a customer age is a positive number in several different components. 
+I love using Redis in my projects, it is a super-fast and scalable no-SQL data layer with a bunch of useful in-memory data structures. In some cases, however, it would be great to have some kind of schema support for the data in my Redis database. Imagine a case in which I have 2 different Microservices using the reading and writing customer profile data into Redis. It would save time and reduce my bug count if, for example, I don't have to check that a customer age is a positive number in several different components. 
 
 ## Redis Modules to the rescue
 One of the best 'hidden gems' of Redis is the [Module APIs](https://redis.io/topics/modules-intro) which allows adding new commands and behaviors type to Redis. Redis comes with a [C API](https://redis.io/topics/modules-api-ref) which is really easy-to-use (it even helps you avoid [memory leaks](https://redis.io/topics/modules-api-ref#section-automatic-memory-management-for-modules)) so even a part-time developer like myself is able to create one. In this article I will show how to create a module that data validation rules to Redis as well as implements a simple Table data type. The code for this article is located [https://github.com/nirmash/redis-schema](https://github.com/nirmash/redis-schema).
@@ -8,21 +8,21 @@ One of the best 'hidden gems' of Redis is the [Module APIs](https://redis.io/top
 ## The `schema` Redis module 
 The Redis module in this article is comprised of three components:
 1. **Rules** - The module allows developers to associate data validation rules with Redis Key name patterns. The module supports string length, number range, RegEx, Enum and Picklist validation rules. Field patters are evaluated left to right (e.g. a string rule that has the `name_` pattern and defines max string length at 10 will apply to a Redis key called `name_1` but not `name1`).
-2. **Tables** - The moduled can be used to create a table rule. A table rule defines a table name and a list of individual rules that are part of it. In a table, field names are strictly evaluated. 
+2. **Tables** - The module can be used to create a table rule. A table rule defines a table name and a list of individual rules that are part of it. In a table, field names are strictly evaluated. 
 3. **Lua scripts** - Redis supports running server-side [Lua Scripts](https://redis.io/commands/eval). The module adds the ability to use Lua scripts as a way to implement queries or further validation on data. 
 
 All metadata (e.g. the data validation rules or scripts) is saved as Redis keys. Redis commands are added to register rules and "upsert" values into the database. The [GitHub repo](https://github.com/nirmash/redis-schema) includes the source code for the module and the files needed to load it into a Docker environment. 
 
 This article walks through building and launching the module in a Docker container, loading some test data and adding a Lua script to query the data. 
 
-## Pre-requisits
+## Pre-requisites
 Using the samples requires the following.
 1. Install [Git](https://git-scm.com/downloads)
 2. Install [Docker](https://docs.docker.com/get-docker/)
 3. Install [Docker Compose](https://docs.docker.com/compose/install/)
 
 ## Getting the environment up and running
-We will start by cloning the git repo. In a terminal winodw, type:
+We will start by cloning the git repo. In a terminal window, type:
 ```
 $ git clone https://github.com/nirmash/redis-schema.git
 Cloning into 'redis-schema'...
@@ -49,7 +49,7 @@ NAME                          COMMAND                  SERVICE             STATU
 redis-schema_lua_debugger_1   "lua"                    lua_debugger        running
 redis-schema_redis_1          "redis-server '--pro…"   redis               running             0.0.0.0:6379->6379/tcp
 ```
-**Note:** The `docker-compose.yaml` manifest maps the redis port (6379) from the Redis container to your local host. If you have the redis client (`redis-cli`) installed on your local host you can connect to the Redis instace running on the `redis-schema_redis_1` container. The rest of this article assumes Redis client is not installed on your local host and leverages the `redis-schema_lua_debugger_1` to showcase the module capabilities.
+**Note:** The `docker-compose.yaml` manifest maps the redis port (6379) from the Redis container to your local host. If you have the redis client (`redis-cli`) installed on your local host you can connect to the Redis instance running on the `redis-schema_redis_1` container. The rest of this article assumes Redis client is not installed on your local host and leverages the `redis-schema_lua_debugger_1` to showcase the module capabilities.
 
 ## Connect to the `redis-schema_lua_debugger_1` container
 We will use the `redis-schema_lua_debugger_1` as our environment. To get started, open a terminal window and type:
@@ -81,12 +81,12 @@ Module to add validation rules to Redis data
 
 ## Create some data validation rules for Redis keys
 
-We will create a couple of schema rules for Redis keys and Redis lists. Let's imaging that we want to store a list of Vehicle Identification Numbers (VIN) in our Redis database. VIN numbers follow a strict format (upper case characters with the exception of I, O, or Q with the last 6 characters being numeric and overall length of 17  characthers). We will validate that a string meets the VIN format by using a [RegEx](https://en.wikipedia.org/wiki/Regular_expression) rule.
+We will create a couple of schema rules for Redis keys and Redis lists. Let's imaging that we want to store a list of Vehicle Identification Numbers (VIN) in our Redis database. VIN numbers follow a strict format (upper case characters with the exception of I, O, or Q with the last 6 characters being numeric and overall length of 17 characters). We will validate that a string meets the VIN format by using a [RegEx](https://en.wikipedia.org/wiki/Regular_expression) rule.
 
 ```
 172.28.1.4:6379> schema.regex_rule vin_ \b[(A-H|J-N|P|R-Z|0-9)]{17}\b
 ```
-To execute validation rules on incoming data, the module includes a `key_upsert` command. This command takes a Redis command as it's first parameter (e.g. `set`,`sadd`) a field name and the value(s). 
+To execute validation rules on incoming data, the module includes a `key_upsert` command. This command takes a Redis command as its first parameter (e.g. `set`,`sadd`) a field name and the value(s). 
 
 Inserting a valid VIN into a [Redis set](https://redis.io/commands/sadd) will look like:
 ```
@@ -122,7 +122,7 @@ schema.string_rule lastName 20
 schema.number_rule age 0 150
 schema.table_rule contacts firstName lastName age
 ```
-Since Redis doesn't have a notion of table we are storing the table data in [Redis hashsets](https://redis.io/commands/hset). The module is adding an `Id` key to table rows and increments the number of records in a seperate counter key. Let's add some records to the `contacts` table and see how they are stored in the Redis database.
+Since Redis doesn't have a notion of table we are storing the table data in [Redis hashsets](https://redis.io/commands/hset). The module is adding an `Id` key to table rows and increments the number of records in a separate counter key. Let's add some records to the `contacts` table and see how they are stored in the Redis database.
 
 The module includes the `schema.upsert_row` command. This command takes a row index as the first parameter (-1 for a new row) followed by the table name and then a list of key value pairs (field name and value). Values are checked against the field rules (e.g. a contact age can't be larger that a 150).
 ```
@@ -149,7 +149,7 @@ Let's insert some more data into our table so we can query it later.
 ```
 
 ## Create and debug a Lua query script
-Now that we have a table with some data we need a way to query it. We may also want to run some more business logic that is specific to our data model. To do that, the module includes a way to register and execute [Lua Scripts](https://redis.io/commands/eval). Let's look at a script that returns all the data in the `contacts` table. 
+Now that we have a table with some data, we need a way to query it. We may also want to run some more business logic that is specific to our data model. To do that, the module includes a way to register and execute [Lua Scripts](https://redis.io/commands/eval). Let's look at a script that returns all the data in the `contacts` table. 
 ```lua 
 if KEYS[1] == nil then return "missing table name" end
 
@@ -165,7 +165,7 @@ return results
 ```
 Scripts are registered by the module by using the `schema.register_query_lua` command. This command takes a script name and lua source code. The `redis-schema_lua_debugger` container includes a simple tool to load lua from files. 
 
-To use the tool open a new terminal window and navigate to the `src` folder.
+To use the tool, open a new terminal window and navigate to the `src` folder.
 ```
 docker exec -it redis-schema_lua_debugger_1 bash
 root@01b73af63926:/# cd src
@@ -200,7 +200,7 @@ To use the Lua script we need to use the `schema.execute_query_lua` command. To 
 ```
 **Note:** The `lua_publish.py` uses the name of the lua file as the name of the script that we would later call with the `schema.execute_query_lua` command.
 
-Sometimes we need to be able to debug our Lua code inside Redis, fortunatily, Redis has a [Lua debugger](https://redis.io/topics/ldb) built into it. We can start debugging our `select_all.lua` script by using the below command: 
+Sometimes we need to be able to debug our Lua code inside Redis, fortunately, Redis has a [Lua debugger](https://redis.io/topics/ldb) built into it. We can start debugging our `select_all.lua` script by using the below command: 
 ```
 root@9272b3492e54:/src# redis-cli -h 172.28.1.4 -p 6379 --ldb --eval select_all.lua contacts
 Lua debugging session started, please use:
@@ -233,5 +233,3 @@ lua debugger>
 
 ## Conclusion
 This article introduced the idea of using Redis Modules to create schema validation rules and leverages the built-in Lua scripting support in Redis to add server-side logic to your Redis backend. Check out the code on [GitHub repo](https://github.com/nirmash/redis-schema).
-
-
