@@ -477,8 +477,7 @@ int UpsertRow(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   RedisModuleCallReply* rep = RedisModule_Call(ctx, "HSET", "scl", set_name,"Id", row_key); 
   rep = RedisModule_Call(ctx, "HSET", "sv", set_name,argv + 3, argc - 3); 
   
-
-  RedisModule_ReplyWithCallReply(ctx,rep);
+  RedisModule_ReplyWithString(ctx,RedisModule_CreateStringPrintf(ctx,"%d",row_key));
   return REDISMODULE_OK;
 }
 
