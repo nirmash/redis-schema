@@ -56,8 +56,10 @@ RUN mkdir /shared_files
 WORKDIR /src
 RUN make
 
+WORKDIR /
+ADD start.sh start.sh
+RUN chmod u+x start.sh
+
 EXPOSE 6379
 
-WORKDIR /
-
-CMD ["redis-server","--protected-mode no","--logfile","/tmp/redis.txt","--loadmodule","/src/module.so"]
+CMD ["./start.sh"]
